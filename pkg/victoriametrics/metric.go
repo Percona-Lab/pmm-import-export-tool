@@ -55,6 +55,9 @@ type MetricResponse struct {
 			Value []interface{} `json:"value"`
 		} `json:"result"`
 	} `json:"data"`
+	Stats struct {
+		SeriesFetched string `json:"seriesFetched"`
+	} `json:"stats"`
 }
 
 func (r *MetricResponse) GetValidValue() (string, error) {

@@ -219,23 +219,50 @@ func main() { //nolint:gocyclo,maintidx
 				selectors = append(selectors, fmt.Sprintf(`{service_name="%s" or node_name="%s" or instance="%s"}`, serviceName, serviceName, serviceName))
 			}
 		}
-		vmSource, ok := prepareVictoriaMetricsSource(grafanaC, *dumpCore, pmmConfig.VictoriaMetricsURL, selectors, *vmNativeData, *vmContentLimit)
-		if ok {
-			sources = append(sources, vmSource)
-		}
 
-		if *where == "" && len(*instances) > 0 {
-			for i, serviceName := range *instances {
-				if i != 0 {
-					*where += " OR "
-				}
-				*where += fmt.Sprintf("service_name='%s'", serviceName)
+		var chunks []dump.ChunkMeta
+		if *dumpCore {
+			vmSource := prepareVictoriaMetricsSource(grafanaC, pmmConfig.VictoriaMetricsURL, selectors, *vmNativeData, *vmContentLimit)
+			sources = append(sources, vmSource)
+			hasMetrics, err := vmSource.HasMetrics(startTime, endTime)
+			if err != nil {
+				log.Fatal().Msgf("Failed to check metrics in VictoriaMetrics: %v", err)
+			}
+			if hasMetrics {
+				chunks = append(chunks, victoriametrics.SplitTimeRangeIntoChunks(startTime, endTime, *chunkTimeRange)...)
 			}
 		}
 
-		chSource, ok := prepareClickHouseSource(ctx, *dumpQAN, pmmConfig.ClickHouseURL, *where)
-		if ok {
+		if *dumpQAN { //nolint:nestif
+			if *where == "" && len(*instances) > 0 {
+				for i, serviceName := range *instances {
+					if i != 0 {
+						*where += " OR "
+					}
+					*where += fmt.Sprintf("service_name='%s'", serviceName)
+				}
+			}
+
+			chSource, err := prepareClickHouseSource(ctx, pmmConfig.ClickHouseURL, *where)
+			if err != nil {
+				log.Fatal().Msgf("Failed to connect to ClickHouse: %v", err)
+			}
 			sources = append(sources, chSource)
+
+			chChunks, err := chSource.SplitIntoChunks(startTime, endTime, *chunkRows)
+			if err != nil {
+				log.Fatal().Msgf("Failed to create clickhouse chunks: %s", err.Error())
+			}
+			if len(chChunks) > 0 {
+				chunks = append(chunks, chChunks...)
+			}
+		}
+
+		if len(chunks) == 0 {
+			if len(*instances) > 0 {
+				log.Warn().Msgf("It seems that data about instances specified in the `--instance' option does not exist in the PMM server.")
+			}
+			log.Fatal().Msgf("Failed to create a dump. No data was found")
 		}
 
 		file, err := createFile(*dumpPath, *stdout)
@@ -247,23 +274,6 @@ func main() { //nolint:gocyclo,maintidx
 		t, err := transferer.New(file, sources, *workersCount)
 		if err != nil {
 			log.Fatal().Msgf("Failed to setup export: %v", err) //nolint:gocritic //TODO: potential problem here, see muted linter warning
-		}
-
-		var chunks []dump.ChunkMeta
-
-		if *dumpCore {
-			chunks = append(chunks, victoriametrics.SplitTimeRangeIntoChunks(startTime, endTime, *chunkTimeRange)...)
-		}
-
-		if *dumpQAN {
-			chChunks, err := chSource.SplitIntoChunks(startTime, endTime, *chunkRows)
-			if err != nil {
-				log.Fatal().Msgf("Failed to create clickhouse chunks: %s", err.Error())
-			}
-			if len(chChunks) == 0 && !*dumpCore {
-				log.Fatal().Msg("QAN doesn't have any data")
-			}
-			chunks = append(chunks, chChunks...)
 		}
 
 		meta, err := composeMeta(*pmmURL, grafanaC, *exportServicesInfo, cli, *vmNativeData)
@@ -352,13 +362,16 @@ func main() { //nolint:gocyclo,maintidx
 			log.Fatal().Msgf("`--vm-content-limit` is not supported with native data format")
 		}
 
-		vmSource, ok := prepareVictoriaMetricsSource(grafanaC, *dumpCore, pmmConfig.VictoriaMetricsURL, nil, *vmNativeData, *vmContentLimit)
-		if ok {
+		if *dumpCore {
+			vmSource := prepareVictoriaMetricsSource(grafanaC, pmmConfig.VictoriaMetricsURL, nil, *vmNativeData, *vmContentLimit)
 			sources = append(sources, vmSource)
 		}
 
-		chSource, ok := prepareClickHouseSource(ctx, *dumpQAN, pmmConfig.ClickHouseURL, *where)
-		if ok {
+		if *dumpQAN {
+			chSource, err := prepareClickHouseSource(ctx, pmmConfig.ClickHouseURL, *where)
+			if err != nil {
+				log.Fatal().Msgf("Failed to connect to ClickHouse: %v", err)
+			}
 			sources = append(sources, chSource)
 		}
 

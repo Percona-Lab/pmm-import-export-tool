@@ -367,12 +367,27 @@ func readChunks(filename string) (chunkMap, error) {
 	return chunkMap, nil
 }
 
-func vmParseChunk(data []byte) ([]vmMetric, error) {
-	r, err := gzip.NewReader(bytes.NewBuffer(data))
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create reader")
+func isGzip(data []byte) bool {
+	reader := bytes.NewReader(data)
+	r, err := gzip.NewReader(reader)
+	if r != nil {
+		r.Close()
 	}
-	defer r.Close() //nolint:errcheck
+	return err == nil
+}
+
+func vmParseChunk(data []byte) ([]vmMetric, error) {
+	var r io.Reader
+	var err error
+	r = bytes.NewBuffer(data)
+	if isGzip(data) {
+		gr, err := gzip.NewReader(bytes.NewBuffer(data))
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create reader")
+		}
+		defer gr.Close() //nolint:errcheck
+		r = gr
+	}
 	metrics, err := victoriametrics.ParseMetrics(r)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse metrics")

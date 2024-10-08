@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/valyala/fasthttp"
@@ -55,17 +56,25 @@ func TestDashboard(t *testing.T) {
 			pmm.Log("Exporting data with `--dashboard` flag to", dashboardDumpPath)
 			stdout, stderr, err := b.Run(append([]string{"export", "--ignore-load"}, args...)...)
 			if err != nil {
+				if strings.Contains(stderr, "Failed to create a dump. No data was found") {
+					// If pmm-dump returns this error, it also means that the dashboard selector parsing was successful
+					return
+				}
 				t.Fatal("failed to export", err, stdout, stderr)
 			}
 
 			dashboardDumpPath = filepath.Join(testDir, "dump2.tar.gz")
-			args = []string{"-d", dashboardDumpPath, "--pmm-url", pmm.PMMURL(), "--pmm-user", "admin", "--pmm-pass", "admin", "--dashboard", name, "--instance", "pmm-client"}
+			args = []string{"-d", dashboardDumpPath, "--pmm-url", pmm.PMMURL(), "--pmm-user", "admin", "--pmm-pass", "admin", "--dashboard", name, "--instance", "pmm-server"}
 			pmm.Log("Exporting data with `--dashboard` flag and `--instance` to", dashboardDumpPath)
 			stdout, stderr, err = b.Run(append([]string{"export", "--ignore-load"}, args...)...)
 			if err != nil {
+				if strings.Contains(stderr, "Failed to create a dump. No data was found") {
+					// If pmm-dump returns this error, it also means that the dashboard selector parsing was successful
+					return
+				}
 				t.Fatal("failed to export", err, stdout, stderr)
 			}
-			checkDumpFiltering(t, dashboardDumpPath, "pmm-client")
+			checkDumpFiltering(t, dashboardDumpPath, "pmm-server")
 		})
 	}
 }
@@ -85,7 +94,7 @@ func checkDumpFiltering(t *testing.T, dumpPath, instanceFilter string) {
 		case dump.VictoriaMetrics:
 			chunk, err := vmParseChunk(data)
 			if err != nil {
-				t.Fatal("failed to parse chunk", filename)
+				t.Fatal("failed to parse chunk", filename, "error", err.Error())
 			}
 
 			for _, metric := range chunk {

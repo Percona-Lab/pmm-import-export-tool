@@ -76,10 +76,9 @@ export-all:
 export-vm:
 	./$(PMMD_BIN_NAME) export -v --dump-path $(DUMP_FILENAME) \
 		--pmm-url=$(PMM_URL) --dump-core
-
 export-ch:
 	./$(PMMD_BIN_NAME) export -v --dump-path $(DUMP_FILENAME) \
-		--pmm-url=$(PMM_URL) --dump-qan
+		--pmm-url=$(PMM_URL) --dump-qan --no-dump-core
 
 import-all:
 	./$(PMMD_BIN_NAME) import -v --dump-path $(DUMP_FILENAME) \

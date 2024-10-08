@@ -55,7 +55,7 @@ func (r *Reader) Read() ([]interface{}, error) {
 		return nil, err
 	}
 	if len(r.columnTypes) != len(records) {
-		return nil, errors.New("amount of columns mismatch")
+		return nil, errors.Errorf("amount of columns mismatch: expected %d, got %d", len(r.columnTypes), len(records))
 	}
 
 	values := make([]interface{}, 0, len(records))
